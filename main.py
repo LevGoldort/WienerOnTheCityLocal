@@ -17,7 +17,5 @@ crossroads = w.pick_crossroads()
 penis = [-1, 1, 1, -1, 2, 1, 1, 2, -1, 1, 1]
 figure = [1, 1, 1]
 
-# Weiner_lib.print_point_links(damn)
-
 weiner.bootstrap(32.05496079307, 34.768906802947434, crossroads, figure, 1000, 0.4, 60)
 

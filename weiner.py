@@ -37,7 +37,7 @@ class GenerateGraphHandler(osmium.SimpleHandler):
     # Generates a graph of crossroads in radius in meters around the point (lat, lon)
 
     def __init__(self, lat, lon, rad):
-        osmium.SimpleHandler.__init__(self)
+        super().__init__()
         self.all_way_dots = {}
         self.point_lat = lat
         self.point_lon = lon
@@ -75,6 +75,7 @@ def is_right(x1, y1, x2, y2, x, y):
 
 
 def get_start_point(lat, lon, graph):
+    # Find the closest to (lat, lon) node in graph
     min_rad = 50000
     min_point_id = 0
 
@@ -87,6 +88,7 @@ def get_start_point(lat, lon, graph):
 
 
 def generate_set_of_way_ids(point):
+    # Transform ways list of OSM object to Set.
     set_point_ways = set()
     for i in point["ways"]:
         for key in i.keys():
@@ -120,6 +122,8 @@ def if_point_in_angle(ax, ay, bx, by, cx, cy, x, y):
 
 def find_possible_way(point_id, prev_point_id, direction, dist, distance_allowance,
                       angle_allowance, in_graph):
+    # Return the nodes in in_graph accessible from point_id, lying in direction and at dist distance from point_id
+
     graph = dict(in_graph)
     point = in_graph[point_id]
     graph.pop(point_id)
@@ -132,9 +136,9 @@ def find_possible_way(point_id, prev_point_id, direction, dist, distance_allowan
         point_node_intersection_ways = set_point_ways.intersection(set_node_ways)
         point_node_distance = distance(point["lat"], point["lon"], graph[node]["lat"], graph[node]["lon"])
 
-        if point_node_intersection_ways \
-                and point_direction_check(point_id, prev_point_id, node, direction, angle_allowance, in_graph) \
-                and dist * distance_allowance < point_node_distance < dist / distance_allowance:
+        if (point_node_intersection_ways
+                and point_direction_check(point_id, prev_point_id, node, direction, angle_allowance, in_graph)
+                and dist * distance_allowance < point_node_distance < dist / distance_allowance):
             # node lies on the same way as point_id on proper direction and in proper distance
             new_destinations[node] = graph[node]
 
@@ -185,6 +189,7 @@ def show_way_by_points(points, graph):
 
 
 def bootstrap(lat, lon, in_graph, figure, perimeter, distance_allowance, angle_allowance):
+    # Building figure way from (lat, lon) point
     point = get_start_point(lat, lon, in_graph)
     edge = perimeter / len(figure)
     start_points = find_start_ways(point, in_graph, edge, distance_allowance)
@@ -193,8 +198,6 @@ def bootstrap(lat, lon, in_graph, figure, perimeter, distance_allowance, angle_a
     for node in start_points:
         print("***")
         find_figure_way(node, point, figure[1:], edge, in_graph, distance_allowance, angle_allowance, [point, node])
-        # if isinstance(result, list):
-        #     print(show_way_by_points(result, in_graph))
 
 
 def find_figure_way(point, prev_point, figure, edge, in_graph, dist_allowance, angle_allowance, visited_before):
