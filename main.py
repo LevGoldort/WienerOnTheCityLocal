@@ -18,7 +18,10 @@ crossroads = w.pick_crossroads()
 penis = [-1, 1, 1, -1, 2, 1, 1, 2, -1, 1, 1]
 figure = [1, 1]
 
-wiener.find_figure_way(32.05484684105788, 34.769174207787024, crossroads, penis, 3000, 0.3, 90)
+cl = wiener.FigureWayFinder(penis, 3000, 0.4, 90, crossroads)
+cl.find_figure_way(32.05484684105788, 34.769174207787024)
+
+#wiener.find_figure_way(32.05484684105788, 34.769174207787024, crossroads, penis, 3000, 0.3, 90)
 
 
 
