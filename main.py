@@ -1,17 +1,17 @@
 # # coding=utf-8
 # # Making a walking route looking like a dick.
 #
-# import wiener
-# import time
-# import unittest
+import figureway.wiener as wiener
+import time
+import unittest
 #
-# # All Israel file, 83 mb:
-# israel_osm = "/Users/levgoldort/Downloads/israel-and-palestine-latest.osm.pbf"
-# # Holon near my house, 2km2:
-# near_house_osm = "/Users/levgoldort/Downloads/planet_34.762,32.004_34.781,32.015.osm.pbf"
-# california_osm = "/Users/levgoldort/Downloads/planet_-120.0394,38.8848_-119.9224,38.9521.osm.pbf"
-# moscow_osm = "/Users/levgoldort/Downloads/planet_37.297,55.608_37.96,55.893.osm.pbf"
-# tel_aviv_osm = "/Users/levgoldort/Downloads/planet_34.683,31.975_34.986,32.166.osm.pbf"
+# All Israel file, 83 mb:
+israel_osm = "/Users/levgoldort/Downloads/israel-and-palestine-latest.osm.pbf"
+# Holon near my house, 2km2:
+near_house_osm = "/Users/levgoldort/Downloads/planet_34.762,32.004_34.781,32.015.osm.pbf"
+california_osm = "/Users/levgoldort/Downloads/planet_-120.0394,38.8848_-119.9224,38.9521.osm.pbf"
+moscow_osm = "/Users/levgoldort/Downloads/planet_37.297,55.608_37.96,55.893.osm.pbf"
+tel_aviv_osm = "/Users/levgoldort/Downloads/planet_34.683,31.975_34.986,32.166.osm.pbf"
 #
 w = wiener.GenerateGraphHandler(32.054905164244, 34.768934711842135, 900)
 w.apply_file(tel_aviv_osm, locations=True)

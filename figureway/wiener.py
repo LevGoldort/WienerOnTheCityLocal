@@ -11,15 +11,26 @@ STREET_HIGHWAY_TAGS = frozenset([
 DIRECTION_RIGHT = 1
 DIRECTION_LEFT = -1
 
-logging.basicConfig(filename='figure_way_finder.log', encoding='utf-8', level=logging.DEBUG)
+logging.basicConfig(filename='../figure_way_finder.log', encoding='utf-8', level=logging.DEBUG)
 
 
 def point_in_rect(lat, lon, rect):  # OBSOLETE
     return (rect[0] < lat < rect[1]) and (rect[2] < lon < rect[3])
 
 
-def intersection(lst1, lst2):  # OBSOLETE
-    return [value for value in lst1 if value in lst2]
+def rotate(ox, oy, px, py, angle):
+    """
+    Rotate a point counterclockwise by a given angle around a given origin.
+
+    The angle should be given in radians.
+
+    For clockwise - angle should be negated
+    https://stackoverflow.com/questions/34372480/rotate-point-about-another-point-in-degrees-python/34374437
+    """
+
+    qx = ox + math.cos(angle) * (px - ox) - math.sin(angle) * (py - oy)
+    qy = oy + math.sin(angle) * (px - ox) + math.cos(angle) * (py - oy)
+    return qx, qy
 
 
 def distance(lat0, lon0, lat1, lon1):
@@ -78,11 +89,7 @@ def is_right(x1, y1, x2, y2, x, y):
     defined_point_dir = point_direction(x1, y1, x2, y2, x2 + d_x, y2 + d_y)  # Direction of a point to the right
 
     if point_dir == defined_point_dir:
-     #   logging.debug("function is_right called to define is point {},{} to the right from the vector ({},{},{},{}), "
-                     # "the result is TO THE RIGHT".format(x, y, x1, y1, x2, y2))
         return DIRECTION_RIGHT
- #   logging.debug("function is_right called to define is point {},{} to the right from the vector ({},{},{},{}), "
-                 # "the result is TO THE LEFT".format(x, y, x1, y1, x2, y2))
     return DIRECTION_LEFT
 
 
@@ -268,29 +275,39 @@ class FigureWayFinder:
         # Check, if new_node in direction(1=right, -1=left, 2=forward)
         # from vector (prev_node, node) with angle_allowance
         # Using integer lon and lat as coordinates
+        # TODO : fix first part of the func, using rotate instead of this hard shit
 
         Radius = math.sqrt((prev_node["x"] - node["x"]) ** 2  # Distance between point and prev in coords
                            + (prev_node["y"] - node["y"]) ** 2)
 
-        cos = (prev_node["x"] - node["x"]) / Radius
-        alfa = math.acos(cos)  # Angle between line point-prev_point and abscissa
+        if direction != 2:
 
-        sign = is_right(node["x"], node["y"],
-                        node["x"] + Radius, node["y"],
-                        prev_node["x"], prev_node["y"])
+            cos = (prev_node["x"] - node["x"]) / Radius
+            alfa = math.acos(cos)  # Angle between line point-prev_point and abscissa
 
-        # Sign indicates, if slope is positive or not. If prev_point above abscissa, it is to the right of it,
-        # and slope is positive.
+            sign = is_right(node["x"], node["y"],
+                            node["x"] + Radius, node["y"],
+                            prev_node["x"], prev_node["y"])
 
-        beta1 = direction * math.pi / 2 + sign * alfa - math.radians(self.angle_allowance / 2)  # Deflection left
-        beta2 = direction * math.pi / 2 + sign * alfa + math.radians(self.angle_allowance / 2)  # Deflection right
+
+            # Sign indicates, if slope is positive or not. If prev_point above abscissa, it is to the right of it,
+            # and slope is positive.
+
+            beta1 = direction * math.pi / 2 + sign * alfa - math.radians(self.angle_allowance / 2)  # Deflection left
+            beta2 = direction * math.pi / 2 + sign * alfa + math.radians(self.angle_allowance / 2)  # Deflection right
 
         # pi/2= right, -pi/2 = left, pi = forward.
 
-        ax = node["x"] + Radius * math.cos(beta1)
-        ay = node["y"] + Radius * math.sin(beta1)
-        bx = node["x"] + Radius * math.cos(beta2)
-        by = node["y"] + Radius * math.sin(beta2)
+            ax = node["x"] + Radius * math.cos(beta1)
+            ay = node["y"] + Radius * math.sin(beta1)
+            bx = node["x"] + Radius * math.cos(beta2)
+            by = node["y"] + Radius * math.sin(beta2)
+
+        else:
+            x1 = 2 * node['x'] - prev_node['x']
+            y1 = 2 * node['y'] - prev_node['y']
+            ax, ay = rotate(node['x'], node['y'], x1, y1, math.radians(self.angle_allowance / 2))
+            bx, by = rotate(node['x'], node['y'], x1, y1, -math.radians(self.angle_allowance / 2))
 
         # Two points A and B forming angle_allowance from the point to direction
 
