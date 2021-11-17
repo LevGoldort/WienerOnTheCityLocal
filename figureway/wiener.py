@@ -1,6 +1,11 @@
 import osmium
 import math
 import logging
+import sys, os
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import utm
 
 NAME_EN_TAG = "name:en"
 STREET_HIGHWAY_TAGS = frozenset([
@@ -33,6 +38,15 @@ def rotate(ox, oy, px, py, angle):
     return qx, qy
 
 
+def rotate_np(p, origin=(0, 0), degrees=0):
+    angle = np.deg2rad(degrees)
+    R = np.array([[np.cos(angle), -np.sin(angle)],
+                  [np.sin(angle), np.cos(angle)]])
+    o = np.atleast_2d(origin)
+    p = np.atleast_2d(p)
+    return np.squeeze((R @ (p.T - o.T) + o.T).T)
+
+
 def distance(lat0, lon0, lat1, lon1):
     # Return distance in meters between two dots
     # https://stackoverflow.com/questions/639695/how-to-convert-latitude-or-longitude-to-meters
@@ -44,19 +58,6 @@ def distance(lat0, lon0, lat1, lon1):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
     return earth_radius * c * 1000
-
-
-def generate_set_of_way_ids(point):  # #OBSOLETE
-    # Transform ways list of OSM object to Set.
-    set_point_ways = set()
-    for i in point["ways"]:
-        for key in i.keys():
-            set_point_ways.add(key)
-    return set_point_ways
-
-
-def vector_cross_product(ax, ay, az, bx, by, bz):  # OBSOLETE
-    return [ay*bz-az*by, az*bx-ax*bz, ax*by-ay*bx]
 
 
 def point_direction(x1, y1, x2, y2, x, y):
@@ -126,6 +127,14 @@ def show_way_by_points(points, graph):
     return address
 
 
+def show_way_by_lonlat(points):
+    address = "https://www.google.com/maps/dir/"
+    for point in points:
+        point_str = str(point[0]) + "," + str(point[1]) + "/"
+        address = address + point_str
+    return address
+
+
 def get_street_tag(tags):
     # Check OSM way tags to decide if it is a street
     if "highway" not in tags:
@@ -146,6 +155,7 @@ class GenerateGraphHandler(osmium.SimpleHandler):
     def __init__(self, lat, lon, rad):
         super().__init__()
         self.all_way_dots = {}
+        self.way_counter = {}
         self.point_lat = lat
         self.point_lon = lon
         self.radius = rad
@@ -157,22 +167,31 @@ class GenerateGraphHandler(osmium.SimpleHandler):
         for node in w.nodes:
             if distance(self.point_lat, self.point_lon, node.lat, node.lon) < self.radius:
                 if node.ref not in self.all_way_dots.keys():
+                    # If node is not saved yet, then add it to dict of all dots
                     self.all_way_dots[node.ref] = {
                         "lat": node.lat,
                         "lon": node.lon,
                         "x": node.x,
-                        "y": node.y
+                        "y": node.y,
+                        "neighbors": set()
                     }
+                    self.way_counter[node.ref] = 0  # Number of different ways this node participate in
 
-                if "ways" not in self.all_way_dots[node.ref]: #TODO: Create ways on prev setp;
-                    self.all_way_dots[node.ref]["ways"] = {}
-                self.all_way_dots[node.ref]["ways"][w.id] = w.tags[street_tag]
+                for connected_node in w.nodes:
+                    # Add all nodes in the way as neighbors for this dot
+                    self.all_way_dots[node.ref]["neighbors"].add(connected_node.ref)
+                self.all_way_dots[node.ref]["neighbors"].remove(node.ref)
+                self.way_counter[node.ref] += 1
+
+                # if "ways" not in self.all_way_dots[node.ref]: #TODO: Create ways on prev setp;
+                #     self.all_way_dots[node.ref]["ways"] = {}
+                # self.all_way_dots[node.ref]["ways"][w.id] = w.tags[street_tag]
 
     def pick_crossroads(self):
-        crossroads = {}
-        for node_ref in self.all_way_dots:
-            if len(self.all_way_dots[node_ref]["ways"]) > 1:
-                crossroads[node_ref] = self.all_way_dots[node_ref]
+        crossroads_refs = {key for (key, value) in self.way_counter.items() if value > 1}  # pick all crossroad ids
+        crossroads = {key: self.all_way_dots[key] for key in crossroads_refs}
+        for node_ref in crossroads:
+            crossroads[node_ref]['neighbors'] = crossroads[node_ref]['neighbors'] & crossroads_refs
         return crossroads
 
 
@@ -203,28 +222,25 @@ class FigureWayFinder:
                 < distance_to_current_node
                 < length * self.edge * (2 - self.distance_allowance))
 
-    def continue_straight(self, current_node_ref, prev_node_ref, usages_number):
-        logging.debug("Continue straight called in direction from {} to {}, step {}".format(prev_node_ref, current_node_ref, usages_number))
+    def continue_straight(self, current_node_ref, prev_node_ref, usages_number=0):
+
         if usages_number > 3:
             return None
         usages_number += 1
 
-        graph = dict(self.graph)
-        current_node = graph.pop(current_node_ref)
-        prev_node = graph.pop(prev_node_ref)
+        current_node = self.graph[current_node_ref]
+        prev_node = self.graph[prev_node_ref]
         possible_ways = {}
         node_in_same_direction = {}
-        set_current_node_ways = set(current_node["ways"].keys())
 
-        for node_ref in graph:
-            set_node_ways = set(graph[node_ref]["ways"].keys())  # List of the way ids of node
-            is_on_the_same_way = set_current_node_ways.intersection(set_node_ways)
+        for neighbor_ref in current_node['neighbors']:
+
             is_on_the_same_direction = self.node_direction_check(current_node, prev_node,
-                                                                 graph[node_ref], 2)
+                                                                 self.graph[neighbor_ref], 2)
             distance_to_current_node = distance(current_node["lat"], current_node["lon"],
-                                                graph[node_ref]["lat"], graph[node_ref]["lon"])
-            if is_on_the_same_way and is_on_the_same_direction and distance_to_current_node > self.edge / 4:
-                node_in_same_direction[node_ref] = graph[node_ref]
+                                                self.graph[neighbor_ref]["lat"], self.graph[neighbor_ref]["lon"])
+            if is_on_the_same_direction:  # and distance_to_current_node > self.edge / 4:
+                node_in_same_direction[neighbor_ref] = self.graph[neighbor_ref]
 
         for node_ref in node_in_same_direction:
             nodes_straightforward = self.continue_straight(node_ref, current_node_ref, usages_number)
@@ -232,91 +248,53 @@ class FigureWayFinder:
                 possible_ways.update(nodes_straightforward)
 
         possible_ways.update(node_in_same_direction)
-        logging.debug("Continue straight called in direction from {} to {}, nodes returned:".format(prev_node_ref, current_node_ref))
-        logging.debug(possible_ways)
+
         return possible_ways
 
     def find_possible_way(self, current_node_ref, prev_node_ref, figure_element):
         # Return the nodes in in_graph accessible from point_id, lying in direction and at dist distance from point_id
-        logging.debug("find_possible_way called to find way from node {} to {} in direction {}".format(prev_node_ref, current_node_ref, figure_element["direction"]))
-        graph = dict(self.graph)
-        current_node = graph.pop(current_node_ref)
-        # Is it better to add check for the cycle instead of copying the graph?
+        current_node = self.graph[current_node_ref]
         new_destinations = {}
-        set_current_node_ways = set(current_node["ways"].keys())
         node_in_same_direction = {}
         possible_ways = {}
 
-        for node_ref in graph:
-            set_node_ways = set(graph[node_ref]["ways"].keys())  # List of the way ids of node
-            is_on_the_same_way = set_current_node_ways.intersection(set_node_ways)
-            is_on_the_same_direction = self.node_direction_check(current_node, graph[prev_node_ref], graph[node_ref],
+        for neighbor_ref in current_node['neighbors']:
+            is_on_the_same_direction = self.node_direction_check(current_node, self.graph[prev_node_ref],
+                                                                 self.graph[neighbor_ref],
                                                                  figure_element["direction"])
-            if is_on_the_same_way and is_on_the_same_direction:
-                node_in_same_direction[node_ref] = graph[node_ref]
+            if is_on_the_same_direction:
+                node_in_same_direction[neighbor_ref] = self.graph[neighbor_ref]
 
         for node_ref in node_in_same_direction:
-            nodes_straight_forward = self.continue_straight(node_ref, current_node_ref, 0)
+            nodes_straight_forward = self.continue_straight(node_ref, current_node_ref)
             possible_ways.update(nodes_straight_forward)
 
         possible_ways.update(node_in_same_direction)
 
         for node_ref in possible_ways:
             distance_to_current_node = distance(current_node["lat"], current_node["lon"],
-                                                graph[node_ref]["lat"], graph[node_ref]["lon"])
+                                                self.graph[node_ref]["lat"], self.graph[node_ref]["lon"])
             is_in_distance = self.is_in_correct_distance(distance_to_current_node, figure_element["length"])
             if is_in_distance:
-                new_destinations[node_ref] = graph[node_ref]
-        logging.debug("find_possible_way called to find way from node {} to {} in direction {}, ways found:".format(prev_node_ref, current_node_ref, figure_element["direction"]))
-        logging.debug(new_destinations)
+                new_destinations[node_ref] = self.graph[node_ref]
+
         return new_destinations
 
     def node_direction_check(self, node, prev_node, new_node, direction):
         # Check, if new_node in direction(1=right, -1=left, 2=forward)
         # from vector (prev_node, node) with angle_allowance
         # Using integer lon and lat as coordinates
-        # TODO : fix first part of the func, using rotate instead of this hard shit
+        x1, y1 = rotate(node['x'], node['y'], prev_node['x'], prev_node['y'], (math.pi / 2) * direction)
 
-        Radius = math.sqrt((prev_node["x"] - node["x"]) ** 2  # Distance between point and prev in coords
-                           + (prev_node["y"] - node["y"]) ** 2)
-
-        if direction != 2:
-
-            cos = (prev_node["x"] - node["x"]) / Radius
-            alfa = math.acos(cos)  # Angle between line point-prev_point and abscissa
-
-            sign = is_right(node["x"], node["y"],
-                            node["x"] + Radius, node["y"],
-                            prev_node["x"], prev_node["y"])
-
-
-            # Sign indicates, if slope is positive or not. If prev_point above abscissa, it is to the right of it,
-            # and slope is positive.
-
-            beta1 = direction * math.pi / 2 + sign * alfa - math.radians(self.angle_allowance / 2)  # Deflection left
-            beta2 = direction * math.pi / 2 + sign * alfa + math.radians(self.angle_allowance / 2)  # Deflection right
-
-        # pi/2= right, -pi/2 = left, pi = forward.
-
-            ax = node["x"] + Radius * math.cos(beta1)
-            ay = node["y"] + Radius * math.sin(beta1)
-            bx = node["x"] + Radius * math.cos(beta2)
-            by = node["y"] + Radius * math.sin(beta2)
-
-        else:
-            x1 = 2 * node['x'] - prev_node['x']
-            y1 = 2 * node['y'] - prev_node['y']
-            ax, ay = rotate(node['x'], node['y'], x1, y1, math.radians(self.angle_allowance / 2))
-            bx, by = rotate(node['x'], node['y'], x1, y1, -math.radians(self.angle_allowance / 2))
-
-        # Two points A and B forming angle_allowance from the point to direction
+        ax, ay = rotate(node['x'], node['y'], x1, y1, math.radians(self.angle_allowance / 2))
+        bx, by = rotate(node['x'], node['y'], x1, y1, -math.radians(self.angle_allowance / 2))
 
         return if_point_in_angle(node["x"], node["y"], ax, ay, bx, by,
                                  new_node["x"], new_node["y"])
 
     def find_figure_way(self, lat, lon):
         # Building figure way from (lat, lon) point
-        logging.debug("find_figure_way called from lat {}, lon {}".format(lat, lon))
+
         start_node_ref = self.get_start_node(lat, lon)
         start_nodes = self.find_start_ways(start_node_ref)
         for node in start_nodes:
@@ -325,16 +303,16 @@ class FigureWayFinder:
 
     def try_continue_way(self, figure, visited_before):
         # figure is list of direction: int
-        logging.debug("try_continue_way called. current node is {}, prev node is {} visited before: {}, current direction:{}".format(visited_before[-1], visited_before[-2], visited_before, figure[0]["direction"]))
+        #        logging.debug("try_continue_way called. current node is {}, prev node is {} visited before: {}, current direction:{}".format(visited_before[-1], visited_before[-2], visited_before, figure[0]["direction"]))
         if not figure:
+            print(show_way_by_points(visited_before, self.graph))
             return visited_before
 
         current_node = visited_before[-1]
         prev_node = visited_before[-2]
 
         possible_ways = self.find_possible_way(current_node, prev_node, figure[0])
-        logging.debug("try_continue_way is back. Current node is {}, prev node is {} visited before: {}, current direction:{}, possible ways found:".format(visited_before[-1], visited_before[-2], visited_before, figure[0]["direction"]))
-        logging.debug(possible_ways)
+
         if not possible_ways:
             # We have no point to continue the route
             return False
@@ -350,20 +328,14 @@ class FigureWayFinder:
 
     def find_start_ways(self, start_node_ref):
         # Function to find ways from the node in any direction
-        logging.debug("find_start_ways called from node {}".format(start_node_ref))
-        graph = dict(self.graph)
-        start_node = graph.pop(start_node_ref)
+        start_node = self.graph[start_node_ref]
         new_destinations = {}
-        set_start_node_ways = set(start_node["ways"].keys())
 
-        for node_ref in graph:
-            set_node_ways = set(graph[node_ref]["ways"].keys())  # List of the way ids of node
+        for neighbor_ref in start_node['neighbors']:
             distance_to_start_node = distance(start_node["lat"], start_node["lon"],
-                                              graph[node_ref]["lat"], graph[node_ref]["lon"])
-            is_on_the_same_way = set_start_node_ways.intersection(set_node_ways)
+                                              self.graph[neighbor_ref]["lat"], self.graph[neighbor_ref]["lon"])
             is_in_distance = self.is_in_correct_distance(distance_to_start_node, 1)
-            if is_in_distance and is_on_the_same_way:
-                new_destinations[node_ref] = graph[node_ref]
-        logging.debug("find_start_ways  from node {} found these ways:".format(start_node_ref))
-        logging.debug(new_destinations)
+            if is_in_distance:
+                new_destinations[neighbor_ref] = self.graph[neighbor_ref]
+
         return new_destinations
