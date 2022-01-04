@@ -15,6 +15,8 @@ bot.
 
 import logging
 import figureway.wiener as wiener
+import figureway.static_methods as static
+import os
 
 from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.ext import (
@@ -37,6 +39,16 @@ GENDER, PHOTO, LOCATION, BIO = range(4)
 LOC = 0
 tel_aviv_osm = "/Users/levgoldort/Downloads/planet_34.683,31.975_34.986,32.166.osm.pbf"
 ams_osm='/Users/levgoldort/Downloads/planet_4.89,52.282_5.124,52.388.osm.pbf'
+penis_dict = [{"direction": -1, "length": 1},
+              {"direction": 1, "length": 1},
+              {"direction": 1, "length": 1},
+              {"direction": -1, "length": 2},
+              {"direction": 1, "length": 1},
+              {"direction": 1, "length": 2},
+              {"direction": -1, "length": 1},
+              {"direction": 1, "length": 1},
+              {"direction": 1, "length": 1}
+              ]
 
 
 def start(update: Update, context: CallbackContext) -> int:
@@ -60,25 +72,26 @@ def loc(update: Update, context: CallbackContext) -> int:
     logger.info(
         "Start Location for %s: %f / %f", user.first_name, user_location.latitude, user_location.longitude
     )
-    w = wiener.GenerateGraphHandler(user_location.latitude, user_location.longitude, 10000)
-    w.apply_file(ams_osm, locations=True)
-    w.apply_file(tel_aviv_osm, locations=True)
-    penis_dict = [{"direction": -1, "length": 1},
-                  {"direction": 1, "length": 1},
-                  {"direction": 1, "length": 1},
-                  {"direction": -1, "length": 2},
-                  {"direction": 1, "length": 1},
-                  {"direction": 1, "length": 2},
-                  {"direction": -1, "length": 1},
-                  {"direction": 1, "length": 1},
-                  {"direction": 1, "length": 1}
-                  ]
-    figure_dict = penis_dict
-    crossroads = w.pick_crossroads()
-    cl = wiener.FigureWayFinder(figure_dict, 1000, 0.5, 45, crossroads)
+
+    city_list = static.load_city_list('./figureway/Static_data/cities.json')
+    closest_city = static.find_closest_city(user_location.latitude, user_location.longitude, city_list)
+    print(closest_city)
+    if not closest_city:
+        update.message.reply_text('The bot works only at cities, looks, you are not near one. Come back from the city!')
+        return ConversationHandler.END
+
+    city_filepath = './figureway/Static_data/City_data/'+closest_city['name']+'.pickle'
+    print(city_filepath)
+
+    if not os.path.isfile(city_filepath):
+        update.message.reply_text('Apparently, you are in {}, we are not working in this city yet, but we will! Try again later'.format(closest_city['name']))
+        return ConversationHandler.END
+    else:
+        crossroads = static.load_crossroads(city_filepath)
+
+    cl = wiener.FigureWayFinder(penis_dict, 1000, 0.5, 45, crossroads)
     cl.find_figure_way(user_location.latitude, user_location.longitude)
-    # cl.edge = 1000/len(penis_dict)
-    # cl.find_figure_way(user_location.latitude, user_location.longitude)
+
     if cl.ways_found:
         update.message.reply_text(
             'Is this way looks like what you wanted?')
@@ -130,6 +143,9 @@ def main() -> None:
     # SIGTERM or SIGABRT. This should be used most of the time, since
     # start_polling() is non-blocking and will stop the bot gracefully.
     updater.idle()
+
+
+def temp():
 
 
 if __name__ == '__main__':

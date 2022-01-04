@@ -365,6 +365,16 @@ def old_main():
                              destination_bucket=amazon_bucket_name)
 
 
+def load_cities_from_s3(destination_bucket, s3_api_key, s3_secret_key, countrycode):
+    session = boto3.Session(aws_access_key_id=s3_api_key, aws_secret_access_key=s3_secret_key)
+    s3 = session.resource('s3')
+    my_bucket = s3.Bucket(destination_bucket)
+    result = []
+    for object_summary in my_bucket.objects.filter(Prefix="/Static/"+countrycode):
+        result.append(str(object_summary.key).split('/')[3])
+    return result
+
+
 def main(countrycode):
     cfg = configparser.ConfigParser()
     cfg.read(os.path.join(os.path.dirname(__file__), 'config.cfg'))
@@ -379,10 +389,18 @@ def main(countrycode):
     amazon_bucket_name = cfg.get('DEFAULT', 'aws_s3_bucket')
 
     city_list = load_city_list(os.path.join(os.path.dirname(__file__), city_list_path))
-    filtered_cities = filter_cities(city_list, countrycode)
+    cities_loaded = load_cities_from_s3(amazon_bucket_name, amazon_access_key_id, amazon_secret_key,
+                                        countrycode=countrycode)
+    city_list_filtered = [element for element in city_list if element['country'] == countrycode and
+                          (element['lat'] + element['lng'] + '.pickle') not in cities_loaded]
+
+    if not city_list_filtered:
+        print('Nothing to load in {}'.format(countrycode))
+        return
+
     destination_path = cfg.get('OUTPUT_PATH', 'destination_path', fallback='Wrong Config file') + countrycode + '/'
     failure_list = []
-    for city in filtered_cities:
+    for city in city_list_filtered:
         print(city)
         start_time = time.time()
         try:
@@ -394,7 +412,7 @@ def main(countrycode):
             print('crossroads for {} exectued in {}'.format(city['name'], time.time() - start_time))
 
         except:
-            failure_list.add(city)
+            failure_list.append(city)
             print('The city {} was not read succesfully :('.format(city['name']))
             time.sleep(300)
 
