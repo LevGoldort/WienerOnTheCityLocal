@@ -1,26 +1,67 @@
 import osmium
 import math
 import logging
-import sys, os
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-import utm
+import staticmaps
+import configparser
+import os
+import staticmethods as static
+import pickle
+import boto3
+from distance import distance
 
 NAME_EN_TAG = "name:en"
 STREET_HIGHWAY_TAGS = frozenset([
     "service",
-    "path"
+    "path",
+    "residential",
+    "footway",
+    "secondary",
+    "unclassified",
+
 ])
 
 DIRECTION_RIGHT = 1
 DIRECTION_LEFT = -1
 
-logging.basicConfig(filename='../figure_way_finder.log', encoding='utf-8', level=logging.DEBUG)
+penis_dict = [{"direction": -1, "length": 1},
+              {"direction": 1, "length": 1},
+              {"direction": 1, "length": 1},
+              {"direction": -1, "length": 2},
+              {"direction": 1, "length": 1},
+              {"direction": 1, "length": 2},
+              {"direction": -1, "length": 1},
+              {"direction": 1, "length": 1},
+              {"direction": 1, "length": 1}
+              ]
 
+#logging.basicConfig(filename='../figure_way_finder.log', level=logging.DEBUG)
+class PointShower:
 
-def point_in_rect(lat, lon, rect):  # OBSOLETE
-    return (rect[0] < lat < rect[1]) and (rect[2] < lon < rect[3])
+    def __init__(self):
+        self.context = staticmaps.Context()
+        self.context.set_tile_provider(staticmaps.tile_provider_OSM)
+
+    def show_point(self, lat, lon, color=staticmaps.RED):
+
+        map_center = staticmaps.create_latlng(lat, lon)
+        self.context.add_object(staticmaps.Marker(map_center, color=color, size=10))
+
+    def show_points_on_map(self, graph, point, points_list, second_points_list=[]):
+        context = staticmaps.Context()
+        context.set_tile_provider(staticmaps.tile_provider_OSM)
+
+        map_center = staticmaps.create_latlng(graph[point]['lat'], graph[point]['lon'])
+        context.add_object(staticmaps.Marker(map_center, color=staticmaps.RED, size=10))
+
+        for element in points_list:
+            element_center = staticmaps.create_latlng(graph[element]['lat'], graph[element]['lon'])
+            context.add_object(staticmaps.Marker(element_center, color=staticmaps.BLUE, size=10))
+
+        image = context.render_svg(1024, 800)
+
+    def drop_image(self):
+        image = self.context.render_svg(1024, 1024)
+        image.save()
 
 
 def rotate(ox, oy, px, py, angle):
@@ -33,65 +74,39 @@ def rotate(ox, oy, px, py, angle):
     https://stackoverflow.com/questions/34372480/rotate-point-about-another-point-in-degrees-python/34374437
     """
 
-    qx = ox + math.cos(angle) * (px - ox) - math.sin(angle) * (py - oy)
-    qy = oy + math.sin(angle) * (px - ox) + math.cos(angle) * (py - oy)
+    qx = ox + math.cos(angle) * (px - ox) - math.sin(angle) * (py - oy) / math.fabs(math.cos(math.radians(oy)))
+    qy = oy + math.sin(angle) * (px - ox) * math.fabs(math.cos(math.radians(oy))) + math.cos(angle) * (py - oy)
+
     return qx, qy
 
 
-def rotate_np(p, origin=(0, 0), degrees=0):
-    angle = np.deg2rad(degrees)
-    R = np.array([[np.cos(angle), -np.sin(angle)],
-                  [np.sin(angle), np.cos(angle)]])
-    o = np.atleast_2d(origin)
-    p = np.atleast_2d(p)
-    return np.squeeze((R @ (p.T - o.T) + o.T).T)
+def rotate_test(oy, ox, py, px, angle):
+    """
+    Rotate a point counterclockwise by a given angle around a given origin.
 
+    The angle should be given in radians.
 
-def distance(lat0, lon0, lat1, lon1):
-    # Return distance in meters between two dots
-    # https://stackoverflow.com/questions/639695/how-to-convert-latitude-or-longitude-to-meters
-    earth_radius = 6378.137
-    d_lat = lat1 * math.pi / 180 - lat0 * math.pi / 180
-    d_lon = lon1 * math.pi / 180 - lon0 * math.pi / 180
-    a = math.sin(d_lat / 2) ** 2 + math.cos(lat0 * math.pi / 180) * math.cos(lat1 * math.pi / 180) \
-        * math.sin(d_lon / 2) ** 2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-    return earth_radius * c * 1000
-
-
-def point_direction(x1, y1, x2, y2, x, y):
-    # Checking the direction of a point (x,y) from vector ((x1, y1), (x2, y2))
-    if (x2 - x1) * (y - y1) - (y2 - y1) * (x - x1) >= 0:
-        return 1  # one direction or in lane
-    return -1  # another direction
+    For clockwise - angle should be negated
+    https://stackoverflow.com/questions/34372480/rotate-point-about-another-point-in-degrees-python/34374437
+    double x =  origion.longitude   + (Math.cos(Math.toRadians(degree)) * (point.longitude - origion.longitude) -
+    Math.sin(Math.toRadians(degree))  * (point.latitude - origion.latitude) / Math.abs(Math.cos(Math.toRadians(origion.latitude)));
+    double y = origion.latitude + (Math.sin(Math.toRadians(degree)) * (point.longitude - origion.longitude) *
+    Math.abs(Math.cos(Math.toRadians(origion.latitude))) + Math.cos(Math.toRadians(degree))   * (point.latitude - origion.latitude));
+    """
+    shower = PointShower()
+    shower.show_point(oy, ox)
+    shower.show_point(py, px, staticmaps.GREEN)
+    qx = ox + math.cos(angle) * (px - ox) - math.sin(angle) * (py - oy) / math.fabs(math.cos(math.radians(oy)))
+    qy = oy + math.sin(angle) * (px - ox) * math.fabs(math.cos(math.radians(oy))) + math.cos(angle) * (py - oy)
+    shower.show_point(qy, qx, staticmaps.BLUE)
+    shower.drop_image()
+    return qx, qy
 
 
 def sign(x):
     if x >= 0:
         return 1
     return -1
-
-
-def is_right(x1, y1, x2, y2, x, y):
-    # Checking if point (x,y) is to the right from the vector((x1,y1),(x2,y2))
-    point_dir = point_direction(x1, y1, x2, y2, x, y)
-
-    if (x2 - x1) != 0:
-        a = (y2 - y1) / (x2 - x1)  # y = a * x + b
-        d_x = sign(a) * sign(x2 - x1)
-    else:
-        d_x = sign(y2 - y1)
-
-    d_y = 0
-    if y2 - y1 == 0:
-        d_y = sign(x1 - x2)  # if the line is horizontal, d_y will be used.
-    # (x2 + d_x, y2 + d_y) is a point that definitely lies to the right of the line.
-    defined_point_dir = point_direction(x1, y1, x2, y2, x2 + d_x, y2 + d_y)  # Direction of a point to the right
-
-    if point_dir == defined_point_dir:
-        return DIRECTION_RIGHT
-    return DIRECTION_LEFT
 
 
 def if_point_in_angle(ax, ay, bx, by, cx, cy, x, y):
@@ -165,6 +180,28 @@ class GenerateGraphHandler(osmium.SimpleHandler):
         if not street_tag:
             return
         for node in w.nodes:
+            if node.ref not in self.all_way_dots.keys():
+                # If node is not saved yet, then add it to dict of all dots
+                self.all_way_dots[node.ref] = {
+                    "lat": node.lat,
+                    "lon": node.lon,
+                    "x": node.x,
+                    "y": node.y,
+                    "neighbors": set()
+                }
+                self.way_counter[node.ref] = 0  # Number of different ways this node participate in
+            for connected_node in w.nodes:
+                # Add all nodes in the way as neighbors for this dot
+                self.all_way_dots[node.ref]["neighbors"].add(connected_node.ref)
+            self.all_way_dots[node.ref]["neighbors"].remove(node.ref)
+            self.way_counter[node.ref] += 1
+
+    def way_obsolete(self, w):
+        #Old way function, saved for a while
+        street_tag = get_street_tag(w.tags)
+        if not street_tag:
+            return
+        for node in w.nodes:
             if distance(self.point_lat, self.point_lon, node.lat, node.lon) < self.radius:
                 if node.ref not in self.all_way_dots.keys():
                     # If node is not saved yet, then add it to dict of all dots
@@ -183,10 +220,6 @@ class GenerateGraphHandler(osmium.SimpleHandler):
                 self.all_way_dots[node.ref]["neighbors"].remove(node.ref)
                 self.way_counter[node.ref] += 1
 
-                # if "ways" not in self.all_way_dots[node.ref]: #TODO: Create ways on prev setp;
-                #     self.all_way_dots[node.ref]["ways"] = {}
-                # self.all_way_dots[node.ref]["ways"][w.id] = w.tags[street_tag]
-
     def pick_crossroads(self):
         crossroads_refs = {key for (key, value) in self.way_counter.items() if value > 1}  # pick all crossroad ids
         crossroads = {key: self.all_way_dots[key] for key in crossroads_refs}
@@ -203,6 +236,7 @@ class FigureWayFinder:
         self.distance_allowance = distance_allowance
         self.angle_allowance = angle_allowance
         self.graph = graph
+        self.ways_found = []
         logging.debug("FigureWayFinder initialized with figure {}, perimeter {}".format(figure, perimeter))
 
     def get_start_node(self, lat, lon):
@@ -216,6 +250,13 @@ class FigureWayFinder:
                 min_distance = node_distance
                 min_point_id = node_ref
         return min_point_id
+
+    def get_start_nodes(self, lat, lon, number_of_nodes):
+        distances_dict = dict()
+        for node_ref in self.graph:
+            distances_dict[node_ref] = distance(lat, lon, self.graph[node_ref]["lat"], self.graph[node_ref]["lon"])
+        sorted_dist = sorted(distances_dict, key=distances_dict.__getitem__)
+        return sorted_dist[0:number_of_nodes]
 
     def is_in_correct_distance(self, distance_to_current_node, length):
         return (length * self.edge * self.distance_allowance
@@ -286,6 +327,7 @@ class FigureWayFinder:
         # Using integer lon and lat as coordinates
         x1, y1 = rotate(node['x'], node['y'], prev_node['x'], prev_node['y'], (math.pi / 2) * direction)
 
+
         ax, ay = rotate(node['x'], node['y'], x1, y1, math.radians(self.angle_allowance / 2))
         bx, by = rotate(node['x'], node['y'], x1, y1, -math.radians(self.angle_allowance / 2))
 
@@ -294,25 +336,41 @@ class FigureWayFinder:
 
     def find_figure_way(self, lat, lon):
         # Building figure way from (lat, lon) point
+        edge = self.edge
+        distance_allowance = self.distance_allowance
+        edge_coeffs = [0.3, 0.4, 0.6, 0.5, 0.7, 0.8, 1.2, 1.4]
+        allowance_coeffs = [0.4, 0.6, 0.7, 0.8]
+        #start_node_ref = self.get_start_node(lat, lon)
+        starting_nodes = self.get_start_nodes(lat, lon, 1)
+        for start_node_ref in starting_nodes:
+            start_nodes = self.find_start_ways(start_node_ref)
+            for node in start_nodes:
+                print("***")
+                self.try_continue_way(self.figure[1:], [start_node_ref, node])
 
-        start_node_ref = self.get_start_node(lat, lon)
-        start_nodes = self.find_start_ways(start_node_ref)
-        for node in start_nodes:
-            print("***")
-            self.try_continue_way(self.figure[1:], [start_node_ref, node])
+        for edge_coeff in edge_coeffs:
+            self.edge = self.edge * edge_coeff
+            for allowance_coeff in allowance_coeffs:
+                self.distance_allowance = self.distance_allowance * allowance_coeff
+                for start_node_ref in starting_nodes:
+                    start_nodes = self.find_start_ways(start_node_ref)
+                    for node in start_nodes:
+                        print("***")
+                        self.try_continue_way(self.figure[1:], [start_node_ref, node])
+
 
     def try_continue_way(self, figure, visited_before):
         # figure is list of direction: int
         #        logging.debug("try_continue_way called. current node is {}, prev node is {} visited before: {}, current direction:{}".format(visited_before[-1], visited_before[-2], visited_before, figure[0]["direction"]))
         if not figure:
-            print(show_way_by_points(visited_before, self.graph))
+            self.ways_found.append(show_way_by_points(visited_before, self.graph))
+            # print(show_way_by_points(visited_before, self.graph))
             return visited_before
 
         current_node = visited_before[-1]
         prev_node = visited_before[-2]
 
         possible_ways = self.find_possible_way(current_node, prev_node, figure[0])
-
         if not possible_ways:
             # We have no point to continue the route
             return False
@@ -339,3 +397,34 @@ class FigureWayFinder:
                 new_destinations[neighbor_ref] = self.graph[neighbor_ref]
 
         return new_destinations
+
+
+def main():
+
+    cfg = configparser.ConfigParser()
+    cfg.read(os.path.join(os.path.dirname(__file__), 'config.cfg'))
+    city_list_path = cfg.get('INPUT_PATH', 'city_list', fallback='Wrong Config file')
+
+    amazon_access_key_id = cfg.get('DEFAULT', 'aws_access_key_id')
+    amazon_secret_key = cfg.get('DEFAULT', 'aws_secret_access_key')
+    amazon_bucket_name = cfg.get('DEFAULT', 'aws_s3_bucket')
+    city_list = static.load_city_list(city_list_path)
+    closest_city = static.find_closest_city(57.12314815338618, 35.4577527073621, city_list)
+    print(closest_city)
+
+    city_filepath = '/Static/' + closest_city['country'] + '/' + closest_city['lat'] + closest_city['lng'] +'.pickle'
+
+    session = boto3.Session(aws_access_key_id=amazon_access_key_id, aws_secret_access_key=amazon_secret_key)
+    s3 = session.resource('s3')
+    obj = s3.Object(amazon_bucket_name, city_filepath)
+    obj.load()
+    crossroads_pickle = obj.get()['Body'].read()
+    crossroads = pickle.loads(crossroads_pickle)
+    cl = FigureWayFinder(penis_dict, 2000, 0.5, 45, crossroads)
+
+    cl.find_figure_way(57.12314815338618, 35.4577527073621)
+    print(cl.ways_found)
+
+
+if __name__ == '__main__':
+    main()

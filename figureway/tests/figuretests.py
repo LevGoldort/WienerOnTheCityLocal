@@ -17,20 +17,6 @@ california_osm = "/Users/levgoldort/Downloads/planet_-120.0394,38.8848_-119.9224
 moscow_osm = "/Users/levgoldort/Downloads/planet_37.297,55.608_37.96,55.893.osm.pbf"
 
 
-class TestIsRight(unittest.TestCase):
-
-    def test_horizontal(self):
-        self.assertEqual(wiener.is_right(0, 0, 1, 0, 1, 2), -1)
-
-    def test_vertical(self):
-        self.assertEqual(wiener.is_right(0, 0, 0, 1, 1, 1), 1)
-
-    def test_negative(self):
-        self.assertEqual(wiener.is_right(-1, -1, -2, 0, 0, 0), 1)
-
-    def test_false(self):
-        self.assertEqual(wiener.is_right(-1, -1, -2, 0, -4, -4), -1)
-
 
 # Crossroads in Florentin, Tel Aviv:
 
@@ -43,6 +29,10 @@ E = {'y': 320581673, 'x': 347715051}  # WOLFSON / HASHUK (to the right but far a
 F = {'y': 320587125, 'x': 347694584}  # MIZRAHI / MATALON (on AB, FAB)
 G = {'y': 320588484, 'x': 347707568}  # HERZL / MATALON (on AB, ABG)
 H = {'y': 320596695, 'x': 347701645}  # GILADI / LEVINSKI (To the left from AB)
+M = {'y': 320596695, 'x': 347701645}
+
+55.75945732933365, 37.6236822348507
+
 
 
 class TestNodeDirectionCheck(unittest.TestCase):

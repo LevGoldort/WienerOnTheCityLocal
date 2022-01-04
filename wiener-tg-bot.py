@@ -15,8 +15,12 @@ bot.
 
 import logging
 import figureway.wiener as wiener
-import figureway.static_methods as static
+import figureway.staticmethods as static
 import os
+import configparser
+import boto3
+import botocore
+import pickle
 
 from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.ext import (
@@ -73,23 +77,54 @@ def loc(update: Update, context: CallbackContext) -> int:
         "Start Location for %s: %f / %f", user.first_name, user_location.latitude, user_location.longitude
     )
 
-    city_list = static.load_city_list('./figureway/Static_data/cities.json')
+    cfg = configparser.ConfigParser()
+    cfg.read(os.path.join(os.path.dirname(__file__), 'config.cfg'))
+    city_list_path = cfg.get('INPUT_PATH', 'city_list', fallback='Wrong Config file')
+
+    amazon_access_key_id = cfg.get('DEFAULT', 'aws_access_key_id')
+    amazon_secret_key = cfg.get('DEFAULT', 'aws_secret_access_key')
+    amazon_bucket_name = cfg.get('DEFAULT', 'aws_s3_bucket')
+
+    city_list = static.load_city_list(city_list_path)
     closest_city = static.find_closest_city(user_location.latitude, user_location.longitude, city_list)
-    print(closest_city)
     if not closest_city:
         update.message.reply_text('The bot works only at cities, looks, you are not near one. Come back from the city!')
         return ConversationHandler.END
 
-    city_filepath = './figureway/Static_data/City_data/'+closest_city['name']+'.pickle'
-    print(city_filepath)
+    city_filepath = '/Static/' + closest_city['country'] + '/' + closest_city['lat'] + closest_city['lng'] +'.pickle'
 
-    if not os.path.isfile(city_filepath):
-        update.message.reply_text('Apparently, you are in {}, we are not working in this city yet, but we will! Try again later'.format(closest_city['name']))
-        return ConversationHandler.END
+    session = boto3.Session(aws_access_key_id=amazon_access_key_id, aws_secret_access_key=amazon_secret_key)
+    s3 = session.resource('s3')
+
+    try:
+        obj = s3.Object(amazon_bucket_name, city_filepath)
+        obj.load()
+
+    except botocore.exceptions.ClientError as e:
+        if e.response['Error']['Code'] == "404":
+            update.message.reply_text(
+                'Apparently, you are in {}, we are not working in this city yet, but we will! Try again later'.format(
+                    closest_city['name']))
+            return ConversationHandler.END
+        else:
+            update.message.reply_text(
+                'Apparently, you are in {}, But something gone wrong, we will fix it!'.format(
+                    closest_city['name']))
+            return ConversationHandler.END
     else:
-        crossroads = static.load_crossroads(city_filepath)
+        crossroads_pickle = obj.get()['Body'].read()
+        crossroads = pickle.loads(crossroads_pickle)
 
-    cl = wiener.FigureWayFinder(penis_dict, 1000, 0.5, 45, crossroads)
+    #
+    #
+    #
+    # if not os.path.isfile(city_filepath):
+    #     update.message.reply_text('Apparently, you are in {}, we are not working in this city yet, but we will! Try again later'.format(closest_city['name']))
+    #     return ConversationHandler.END
+    # else:
+    #     crossroads = static.load_crossroads(city_filepath)
+
+    cl = wiener.FigureWayFinder(penis_dict, 2000, 0.5, 45, crossroads)
     cl.find_figure_way(user_location.latitude, user_location.longitude)
 
     if cl.ways_found:
@@ -115,7 +150,7 @@ def cancel(update: Update, context: CallbackContext) -> int:
     return ConversationHandler.END
 
 
-def main() -> None:
+def main2() -> None:
     """Run the bot."""
     # Create the Updater and pass it your bot's token.
     updater = Updater("2010752312:AAGXT9jJbpDYwCFwKMnEdtiLUV2wBQADGAM")
@@ -145,8 +180,19 @@ def main() -> None:
     updater.idle()
 
 
-def temp():
+def main():
+    cfg = configparser.ConfigParser()
+    cfg.read(os.path.join(os.path.dirname(__file__), 'config.cfg'))
+    city_list_path = cfg.get('INPUT_PATH', 'city_list', fallback='Wrong Config file')
+
+    destination_type = cfg.get('OUTPUT_PATH', 'destination_type', fallback='Wrong Config file')
+    destination_path = cfg.get('OUTPUT_PATH', 'destination_path', fallback='Wrong Config file')
+
+    amazon_access_key_id = cfg.get('DEFAULT', 'aws_access_key_id')
+    amazon_secret_key = cfg.get('DEFAULT', 'aws_secret_access_key')
+    amazon_bucket_name = cfg.get('DEFAULT', 'aws_s3_bucket')
+
 
 
 if __name__ == '__main__':
-    main()
+    main2()

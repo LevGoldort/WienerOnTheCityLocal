@@ -3,7 +3,7 @@ import osmium
 import json
 import time
 import pickle
-from figureway.wiener import distance
+from figureway.distance import distance
 import os
 import sys
 import requests
@@ -20,7 +20,8 @@ STREET_HIGHWAY_TAGS = frozenset([  # OpenStreetMap tags related to roads.
     "footway",
     "tertiary",
     "secondary",
-    "unclassified"
+    "unclassified",
+    "pedestrian"
 ])
 CITY_RAD = 10000  # Minimum distance to the closest city
 CITY_RAD_KM = 10
@@ -75,8 +76,8 @@ class CityDownloader():
                     self.all_way_dots[node.id] = {
                         "lat": float(node.lat),
                         "lon": float(node.lon),
-                        "x": float(node.lat),
-                        "y": float(node.lon),
+                        "x": float(node.lon),
+                        "y": float(node.lat),
                     }
                     self.way_counter[node.id] = 0  # Number of different ways this node participate in
                 self.way_counter[node.id] += 1
@@ -394,6 +395,7 @@ def main(countrycode):
     city_list_filtered = [element for element in city_list if element['country'] == countrycode and
                           (element['lat'] + element['lng'] + '.pickle') not in cities_loaded]
 
+
     if not city_list_filtered:
         print('Nothing to load in {}'.format(countrycode))
         return
@@ -424,5 +426,5 @@ def main(countrycode):
 
 if __name__ == '__main__':
     start_time = time.time()
-    main('RU')
+    main('IL')
     print('whole script executed in', time.time() - start_time)
