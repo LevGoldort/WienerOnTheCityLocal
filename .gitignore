@@ -6,4 +6,13 @@
 /__pycache__
 /venv2
 figure_way_finder.log
-
+config.cfg
+figureway/Country_links.csv
+figureway/cities.json
+figureway/failure.txt
+figureway/noname.svg
+figureway/osm-file-dl.osm.pbf
+push-to-ec2.sh
+requirements.txt
+ssh-connect.sh
+figureway/config.cfg
