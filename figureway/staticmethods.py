@@ -1,3 +1,17 @@
+"""
+The module downloads staticdata from Overpass API or from osm.pbf files, reworks to crossroads graph for module wiener
+and stores to Amazon S3 bucket.
+To work properly, config should contain aws_access_key_id, aws_secret_access_key, aws_s3_bucket, city_list_path.
+City list is a JSON file, a list of  the cities in this format:
+
+  {
+    "country": "IL",
+    "name": "Jaffa",
+    "lat": "32.05043",
+    "lng": "34.75224"
+  }
+"""
+
 import boto3
 import osmium
 import json
@@ -28,7 +42,10 @@ CITY_RAD_KM = 10
 BASIC_OVERPASS_URL = 'https://overpass.kumi.systems/api/interpreter'
 
 
-class CityDownloader():
+class CityDownloader:
+    """
+    Downloading crossroads data by lon and lat of the city center
+    """
 
     def __init__(self, city_center_lat, city_center_lon, city_radius, url=BASIC_OVERPASS_URL):
         self.min_lat, self.min_lon, self.max_lat, self.max_lon = boundingBox(city_center_lat, city_center_lon,
@@ -52,17 +69,10 @@ class CityDownloader():
             (._;>;);
             out body;
             """.format(min_lat, min_lon, max_lat, max_lon))
-
-        # for way in result.ways:
-        #     print("Name: %s" % way.tags.get("name:en", "n/a"))
-        #     # print("  Highway: %s" % way.tags.get("highway", "n/a"))
-        #     # print("  Nodes:")
-        #     # for node in way.nodes:
-        #     #     print(node.id)
-        #     #     print("    Lat: %f, Lon: %f" % (node.lat, node.lon))
         return result
 
     def run_ways(self):
+        # Generating a graph from nodes, that ways contains of
         for w in self.all_ways.ways:
             street_tag = get_street_tag(w.tags)
             if not street_tag:
@@ -87,6 +97,7 @@ class CityDownloader():
                     self.node_ways[node.id].add(w.id)
 
     def get_neighbors(self, node_ref):
+        # Return all nodes that belong to the way this node belongs
         result = set()
         for way in self.node_ways[node_ref]:
             result = set.union(result, self.way_nodes[way])
@@ -94,6 +105,7 @@ class CityDownloader():
         return result
 
     def pick_crossroads(self):
+        # Generate graph only from nodes that are crossroads (belongs min to 2 ways)
         crossroads_refs = {key for (key, value) in self.way_counter.items() if value > 1}  # pick all crossroad ids
         crossroads = {key: self.all_way_dots[key] for key in crossroads_refs}
         for node_ref in crossroads:  # Saving in neighbors only nodes that are crossroads
@@ -157,8 +169,8 @@ def load_city_list(file_path):
 
 
 def download_osm(url, dest):
+    # Download OSM file from url and save to dest
     r = requests.get(url, allow_redirects=True)
-    print('what we got here', r)
     with open(dest, 'wb') as file:
         file.write(r.content)
 
@@ -170,7 +182,8 @@ def filter_cities(cities_dict, countrycode):
 def drop_crossroads_from_osm(osm_file_path, cities_json, destination_folder_path, destination_type='local',
                              destination_bucket=None, s3_api_key=None, s3_secret_key=None, country_filter=[],
                              city_filter=[]):
-    # Getting the crossroads from osm_file_path, matches them with cities_json and drops to destination_folder_path
+    # Getting the crossroads from osm_file_path, matches them with cities_json
+    # drops to destination_folder_path or to AWS s3
     w = GenerateGraphHandler()
     start = time.time()
     w.apply_file(osm_file_path, locations=True)
@@ -179,7 +192,6 @@ def drop_crossroads_from_osm(osm_file_path, cities_json, destination_folder_path
     filtered_cities = [element for element in cities_json if
                        (not country_filter or element['country'] in country_filter) and
                        (not city_filter or element['name'] in city_filter)]
-    print('CITIES FILTERED')
 
     if destination_type == 'local':
         if not os.path.exists(destination_folder_path):
@@ -259,8 +271,9 @@ class GenerateGraphHandler(osmium.SimpleHandler):
         self.way_nodes = {}  # nodes, contained in the way
 
     def way(self, w):
+        #  During apply of OSM file this function runs for every way found
         street_tag = get_street_tag(w.tags)
-        if not street_tag:
+        if not street_tag:  # It is not a street
             return
         self.way_nodes[w.id] = set()
         for node in w.nodes:
@@ -298,6 +311,8 @@ class GenerateGraphHandler(osmium.SimpleHandler):
 
 
 def download_and_drop_country(cfg, countrycode):
+    # Downloads every city in the country by countrycode
+
     cfg.read(os.path.join(os.path.dirname(__file__), 'config.cfg'))
     city_list_path = cfg.get('INPUT_PATH', 'city_list', fallback='Wrong Config file')
     country_download_links = cfg.get('INPUT_PATH', 'country_list', fallback='Wrong Config file')
