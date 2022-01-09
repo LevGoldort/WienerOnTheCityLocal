@@ -324,10 +324,9 @@ class FigureWayFinder:
     def node_direction_check(self, node, prev_node, new_node, direction):
         # Check, if new_node in direction(1=right, -1=left, 2=forward)
         # from vector (prev_node, node) with angle_allowance
-        # Using integer lon and lat as coordinates
+        # Using float lon and lat as coordinates
+
         x1, y1 = rotate(node['x'], node['y'], prev_node['x'], prev_node['y'], (math.pi / 2) * direction)
-
-
         ax, ay = rotate(node['x'], node['y'], x1, y1, math.radians(self.angle_allowance / 2))
         bx, by = rotate(node['x'], node['y'], x1, y1, -math.radians(self.angle_allowance / 2))
 
@@ -340,8 +339,7 @@ class FigureWayFinder:
         distance_allowance = self.distance_allowance
         edge_coeffs = [0.3, 0.4, 0.6, 0.5, 0.7, 0.8, 1.2, 1.4]
         allowance_coeffs = [0.4, 0.6, 0.7, 0.8]
-        #start_node_ref = self.get_start_node(lat, lon)
-        starting_nodes = self.get_start_nodes(lat, lon, 1)
+        starting_nodes = self.get_start_nodes(lat, lon, 10)
         for start_node_ref in starting_nodes:
             start_nodes = self.find_start_ways(start_node_ref)
             for node in start_nodes:
@@ -358,10 +356,11 @@ class FigureWayFinder:
                         print("***")
                         self.try_continue_way(self.figure[1:], [start_node_ref, node])
 
+        self.edge = edge  # Restored initial values
+        self.distance_allowance = distance_allowance # Restored initial values
 
     def try_continue_way(self, figure, visited_before):
         # figure is list of direction: int
-        #        logging.debug("try_continue_way called. current node is {}, prev node is {} visited before: {}, current direction:{}".format(visited_before[-1], visited_before[-2], visited_before, figure[0]["direction"]))
         if not figure:
             self.ways_found.append(show_way_by_points(visited_before, self.graph))
             # print(show_way_by_points(visited_before, self.graph))
