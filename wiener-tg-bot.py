@@ -32,7 +32,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 GENDER, PHOTO, LOCATION, BIO = range(4)
-LOC = 0
+LOC, RANK = 0, 1
 
 penis_dict = [{"direction": -1, "length": 1},
               {"direction": 1, "length": 1},
@@ -72,6 +72,9 @@ class WienerTgBot:
             states={
                 LOC: [
                     MessageHandler(Filters.location, self.loc),
+                ],
+                RANK: [
+                    MessageHandler(Filters.regex('^(1|2|3|4|5)$'), self.rank)
                 ]
             },
             fallbacks=[CommandHandler('cancel', self.cancel)],
@@ -146,14 +149,27 @@ class WienerTgBot:
         cl.find_figure_way(user_location.latitude, user_location.longitude)
 
         if cl.ways_found:
+            reply_keyboard = [['1', '2', '3', '4', '5']]
             update.message.reply_text(
-                'Is this way looks like what you wanted?')
+                'We found a wiener-route for you! Check it out and rate it, please!',
+                reply_markup=ReplyKeyboardMarkup(
+                                reply_keyboard,
+                                one_time_keyboard=True,
+                                input_field_placeholder='Rate the route, please!'))
             update.message.reply_text(cl.ways_found[0])
+            return RANK
         else:
             update.message.reply_text(
                 'Unfortunately, there are no such way around you, try to sin less, and god will love you more.'
             )
+            return ConversationHandler.END
 
+    def rank(self, update:Update, context: CallbackContext):
+        rank = update.message.text
+        update.message.reply_text(
+            'Thanks a lot for the rank {} for the route! To get another route feel free to push /Start'.format(rank),
+            reply_markup=ReplyKeyboardRemove()
+        )
         return ConversationHandler.END
 
     def cancel(self, update: Update, context: CallbackContext) -> int:
