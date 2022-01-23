@@ -46,7 +46,7 @@ penis_dict = [{"direction": -1, "length": 1},
               ]
 
 
-class wienerTgBot:
+class WienerTgBot:
 
     def __init__(self):
 
@@ -57,10 +57,9 @@ class wienerTgBot:
         self.amazon_access_key_id = cfg.get('DEFAULT', 'aws_access_key_id')
         self.amazon_secret_key = cfg.get('DEFAULT', 'aws_secret_access_key')
         self.amazon_bucket_name = cfg.get('DEFAULT', 'aws_s3_bucket')
+        self.city_list = static.load_city_list(city_list_path)
 
-        city_list = static.load_city_list(city_list_path)
-
-        # Create the Updater and pass it your bot's token.
+        # Create the Updater and pass it your bots token.
         tg_api_key = cfg.get('DEFAULT', 'tg_api_key')
         updater = Updater(tg_api_key)
 
@@ -69,13 +68,13 @@ class wienerTgBot:
 
         # Add conversation handler with the states GENDER, PHOTO, LOCATION and BIO
         conv_handler = ConversationHandler(
-            entry_points=[CommandHandler('start', start)],
+            entry_points=[CommandHandler('start', self.start)],
             states={
                 LOC: [
-                    MessageHandler(Filters.location, loc),
+                    MessageHandler(Filters.location, self.loc),
                 ]
             },
-            fallbacks=[CommandHandler('cancel', cancel)],
+            fallbacks=[CommandHandler('cancel', self.cancel)],
         )
 
         dispatcher.add_handler(conv_handler)
@@ -88,8 +87,7 @@ class wienerTgBot:
         # start_polling() is non-blocking and will stop the bot gracefully.
         updater.idle()
 
-
-    def start(update: Update, context: CallbackContext) -> int:
+    def start(self, update: Update, context: CallbackContext) -> int:
         """Starts the conversation and asks the user about their gender."""
         reply_keyboard = [['RU', 'EN', 'NL']]
 
@@ -101,45 +99,40 @@ class wienerTgBot:
 
         return LOC
 
-
-    def loc(update: Update, context: CallbackContext) -> int:
+    def loc(self, update: Update, context: CallbackContext) -> int:
         """Stores the location and asks for some info about the user."""
         user = update.message.from_user
         user_location = update.message.location
         print("Start Location for %s: %f / %f", user.first_name, user_location.latitude, user_location.longitude)
-        logger.info(
-            "Start Location for %s: %f / %f", user.first_name, user_location.latitude, user_location.longitude
-        )
 
-        cfg = configparser.ConfigParser()
-        cfg.read(os.path.join(os.path.dirname(__file__), 'config.cfg'))
-        city_list_path = cfg.get('INPUT_PATH', 'city_list', fallback='Wrong Config file')
+        closest_city = static.find_closest_city(user_location.latitude, user_location.longitude, self.city_list)
 
-        amazon_access_key_id = cfg.get('DEFAULT', 'aws_access_key_id')
-        amazon_secret_key = cfg.get('DEFAULT', 'aws_secret_access_key')
-        amazon_bucket_name = cfg.get('DEFAULT', 'aws_s3_bucket')
-
-        city_list = static.load_city_list(city_list_path)
-        closest_city = static.find_closest_city(user_location.latitude, user_location.longitude, city_list)
         if not closest_city:
-            update.message.reply_text('The bot works only at cities, looks, you are not near one. Come back from the city!')
+            update.message.reply_text('''The bot works only at cities, looks, 
+                                            you are not near one. Come back from the city!''')
             return ConversationHandler.END
 
-        city_filepath = '/Static/' + closest_city['country'] + '/' + closest_city['lat'] + closest_city['lng'] +'.pickle'
+        city_filepath = '/Static/' \
+                        + closest_city['country'] \
+                        + '/' \
+                        + closest_city['lat'] \
+                        + closest_city['lng'] \
+                        + '.pickle'
 
-        session = boto3.Session(aws_access_key_id=amazon_access_key_id, aws_secret_access_key=amazon_secret_key)
+        session = boto3.Session(aws_access_key_id=self.amazon_access_key_id, aws_secret_access_key=self.amazon_secret_key)
         s3 = session.resource('s3')
 
         try:
-            obj = s3.Object(amazon_bucket_name, city_filepath)
+            obj = s3.Object(self.amazon_bucket_name, city_filepath)
             obj.load()
 
         except botocore.exceptions.ClientError as e:
             if e.response['Error']['Code'] == "404":
                 update.message.reply_text(
-                    'Apparently, you are in {}, we are not working in this city yet, but we will! Try again later'.format(
-                        closest_city['name']))
+                    '''Apparently, you are in {}, we are not working in this city yet, 
+                    but we will! Try again later'''.format(closest_city['name']))
                 return ConversationHandler.END
+
             else:
                 update.message.reply_text(
                     'Apparently, you are in {}, But something gone wrong, we will fix it!'.format(
@@ -148,15 +141,6 @@ class wienerTgBot:
         else:
             crossroads_pickle = obj.get()['Body'].read()
             crossroads = pickle.loads(crossroads_pickle)
-
-        #
-        #
-        #
-        # if not os.path.isfile(city_filepath):
-        #     update.message.reply_text('Apparently, you are in {}, we are not working in this city yet, but we will! Try again later'.format(closest_city['name']))
-        #     return ConversationHandler.END
-        # else:
-        #     crossroads = static.load_crossroads(city_filepath)
 
         cl = wiener.FigureWayFinder(penis_dict, 2000, 0.5, 45, crossroads)
         cl.find_figure_way(user_location.latitude, user_location.longitude)
@@ -172,8 +156,7 @@ class wienerTgBot:
 
         return ConversationHandler.END
 
-
-    def cancel(update: Update, context: CallbackContext) -> int:
+    def cancel(self, update: Update, context: CallbackContext) -> int:
         """Cancels and ends the conversation."""
         user = update.message.from_user
         logger.info("User %s canceled the conversation.", user.first_name)
@@ -184,49 +167,9 @@ class wienerTgBot:
         return ConversationHandler.END
 
 
-def main2() -> None:
-    """Run the bot."""
-    # Create the Updater and pass it your bot's token.
-    updater = Updater("2010752312:AAGXT9jJbpDYwCFwKMnEdtiLUV2wBQADGAM")
-
-    # Get the dispatcher to register handlers
-    dispatcher = updater.dispatcher
-
-    # Add conversation handler with the states GENDER, PHOTO, LOCATION and BIO
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
-        states={
-            LOC: [
-                MessageHandler(Filters.location, loc),
-            ]
-        },
-        fallbacks=[CommandHandler('cancel', cancel)],
-    )
-
-    dispatcher.add_handler(conv_handler)
-
-    # Start the Bot
-    updater.start_polling()
-
-    # Run the bot until you press Ctrl-C or the process receives SIGINT,
-    # SIGTERM or SIGABRT. This should be used most of the time, since
-    # start_polling() is non-blocking and will stop the bot gracefully.
-    updater.idle()
-
-
 def main():
-    cfg = configparser.ConfigParser()
-    cfg.read(os.path.join(os.path.dirname(__file__), 'config.cfg'))
-    city_list_path = cfg.get('INPUT_PATH', 'city_list', fallback='Wrong Config file')
-
-    destination_type = cfg.get('OUTPUT_PATH', 'destination_type', fallback='Wrong Config file')
-    destination_path = cfg.get('OUTPUT_PATH', 'destination_path', fallback='Wrong Config file')
-
-    amazon_access_key_id = cfg.get('DEFAULT', 'aws_access_key_id')
-    amazon_secret_key = cfg.get('DEFAULT', 'aws_secret_access_key')
-    amazon_bucket_name = cfg.get('DEFAULT', 'aws_s3_bucket')
-
+    tg_bot = WienerTgBot()
 
 
 if __name__ == '__main__':
-    main2()
+    main()
