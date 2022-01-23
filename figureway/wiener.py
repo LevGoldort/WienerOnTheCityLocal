@@ -1,4 +1,3 @@
-import osmium
 import math
 import logging
 import staticmaps
@@ -8,17 +7,6 @@ import staticmethods as static
 import pickle
 import boto3
 from distance import distance
-
-NAME_EN_TAG = "name:en"
-STREET_HIGHWAY_TAGS = frozenset([
-    "service",
-    "path",
-    "residential",
-    "footway",
-    "secondary",
-    "unclassified",
-
-])
 
 DIRECTION_RIGHT = 1
 DIRECTION_LEFT = -1
@@ -34,7 +22,7 @@ penis_dict = [{"direction": -1, "length": 1},
               {"direction": 1, "length": 1}
               ]
 
-#logging.basicConfig(filename='../figure_way_finder.log', level=logging.DEBUG)
+
 class PointShower:
 
     def __init__(self):
@@ -46,7 +34,7 @@ class PointShower:
         map_center = staticmaps.create_latlng(lat, lon)
         self.context.add_object(staticmaps.Marker(map_center, color=color, size=10))
 
-    def show_points_on_map(self, graph, point, points_list, second_points_list=[]):
+    def show_points_on_map(self, graph, point, points_list, second_points_list=None):
         context = staticmaps.Context()
         context.set_tile_provider(staticmaps.tile_provider_OSM)
 
@@ -80,35 +68,6 @@ def rotate(ox, oy, px, py, angle):
     return qx, qy
 
 
-def rotate_test(oy, ox, py, px, angle):
-    """
-    Rotate a point counterclockwise by a given angle around a given origin.
-
-    The angle should be given in radians.
-
-    For clockwise - angle should be negated
-    https://stackoverflow.com/questions/34372480/rotate-point-about-another-point-in-degrees-python/34374437
-    double x =  origion.longitude   + (Math.cos(Math.toRadians(degree)) * (point.longitude - origion.longitude) -
-    Math.sin(Math.toRadians(degree))  * (point.latitude - origion.latitude) / Math.abs(Math.cos(Math.toRadians(origion.latitude)));
-    double y = origion.latitude + (Math.sin(Math.toRadians(degree)) * (point.longitude - origion.longitude) *
-    Math.abs(Math.cos(Math.toRadians(origion.latitude))) + Math.cos(Math.toRadians(degree))   * (point.latitude - origion.latitude));
-    """
-    shower = PointShower()
-    shower.show_point(oy, ox)
-    shower.show_point(py, px, staticmaps.GREEN)
-    qx = ox + math.cos(angle) * (px - ox) - math.sin(angle) * (py - oy) / math.fabs(math.cos(math.radians(oy)))
-    qy = oy + math.sin(angle) * (px - ox) * math.fabs(math.cos(math.radians(oy))) + math.cos(angle) * (py - oy)
-    shower.show_point(qy, qx, staticmaps.BLUE)
-    shower.drop_image()
-    return qx, qy
-
-
-def sign(x):
-    if x >= 0:
-        return 1
-    return -1
-
-
 def if_point_in_angle(ax, ay, bx, by, cx, cy, x, y):
     # a function to check if x,y in angle formed by 3 points A, B, C.
     # https://math.stackexchange.com/questions/1470784/find-if-a-point-lies-within-the-angle-formed-by-three-other-points
@@ -124,15 +83,6 @@ def if_point_in_angle(ax, ay, bx, by, cx, cy, x, y):
     return False
 
 
-def print_point_links(graph):
-    # Test function to print links to points of graph
-    for i in graph:
-        print(i)
-        print("https://www.google.com/maps/search/?api=1&query=" + str(graph[i]["lat"]) + "%2C" + str(
-            graph[i]["lon"]))
-        print(graph[i]["ways"])
-
-
 def show_way_by_points(points, graph):
     # Test function to make a way visual. Returns link to Google Maps route
     address = "https://www.google.com/maps/dir/"
@@ -140,92 +90,6 @@ def show_way_by_points(points, graph):
         point_str = str(graph[point]["lat"]) + "," + str(graph[point]["lon"]) + "/"
         address = address + point_str
     return address
-
-
-def show_way_by_lonlat(points):
-    address = "https://www.google.com/maps/dir/"
-    for point in points:
-        point_str = str(point[0]) + "," + str(point[1]) + "/"
-        address = address + point_str
-    return address
-
-
-def get_street_tag(tags):
-    # Check OSM way tags to decide if it is a street
-    if "highway" not in tags:
-        return None
-
-    if NAME_EN_TAG in tags:
-        return NAME_EN_TAG
-
-    if tags.get("highway") in STREET_HIGHWAY_TAGS:
-        return "highway"
-    return None
-
-
-class GenerateGraphHandler(osmium.SimpleHandler):
-
-    # Generates a graph of crossroads in radius in meters around the point (lat, lon)
-
-    def __init__(self, lat, lon, rad):
-        super().__init__()
-        self.all_way_dots = {}
-        self.way_counter = {}
-        self.point_lat = lat
-        self.point_lon = lon
-        self.radius = rad
-
-    def way(self, w):
-        street_tag = get_street_tag(w.tags)
-        if not street_tag:
-            return
-        for node in w.nodes:
-            if node.ref not in self.all_way_dots.keys():
-                # If node is not saved yet, then add it to dict of all dots
-                self.all_way_dots[node.ref] = {
-                    "lat": node.lat,
-                    "lon": node.lon,
-                    "x": node.x,
-                    "y": node.y,
-                    "neighbors": set()
-                }
-                self.way_counter[node.ref] = 0  # Number of different ways this node participate in
-            for connected_node in w.nodes:
-                # Add all nodes in the way as neighbors for this dot
-                self.all_way_dots[node.ref]["neighbors"].add(connected_node.ref)
-            self.all_way_dots[node.ref]["neighbors"].remove(node.ref)
-            self.way_counter[node.ref] += 1
-
-    def way_obsolete(self, w):
-        #Old way function, saved for a while
-        street_tag = get_street_tag(w.tags)
-        if not street_tag:
-            return
-        for node in w.nodes:
-            if distance(self.point_lat, self.point_lon, node.lat, node.lon) < self.radius:
-                if node.ref not in self.all_way_dots.keys():
-                    # If node is not saved yet, then add it to dict of all dots
-                    self.all_way_dots[node.ref] = {
-                        "lat": node.lat,
-                        "lon": node.lon,
-                        "x": node.x,
-                        "y": node.y,
-                        "neighbors": set()
-                    }
-                    self.way_counter[node.ref] = 0  # Number of different ways this node participate in
-
-                for connected_node in w.nodes:
-                    # Add all nodes in the way as neighbors for this dot
-                    self.all_way_dots[node.ref]["neighbors"].add(connected_node.ref)
-                self.all_way_dots[node.ref]["neighbors"].remove(node.ref)
-                self.way_counter[node.ref] += 1
-
-    def pick_crossroads(self):
-        crossroads_refs = {key for (key, value) in self.way_counter.items() if value > 1}  # pick all crossroad ids
-        crossroads = {key: self.all_way_dots[key] for key in crossroads_refs}
-        for node_ref in crossroads:
-            crossroads[node_ref]['neighbors'] = crossroads[node_ref]['neighbors'] & crossroads_refs
-        return crossroads
 
 
 class FigureWayFinder:
@@ -357,13 +221,12 @@ class FigureWayFinder:
                         self.try_continue_way(self.figure[1:], [start_node_ref, node])
 
         self.edge = edge  # Restored initial values
-        self.distance_allowance = distance_allowance # Restored initial values
+        self.distance_allowance = distance_allowance  # Restored initial values
 
     def try_continue_way(self, figure, visited_before):
         # figure is list of direction: int
         if not figure:
             self.ways_found.append(show_way_by_points(visited_before, self.graph))
-            # print(show_way_by_points(visited_before, self.graph))
             return visited_before
 
         current_node = visited_before[-1]
@@ -411,7 +274,7 @@ def main():
     closest_city = static.find_closest_city(57.12314815338618, 35.4577527073621, city_list)
     print(closest_city)
 
-    city_filepath = '/Static/' + closest_city['country'] + '/' + closest_city['lat'] + closest_city['lng'] +'.pickle'
+    city_filepath = '/Static/' + closest_city['country'] + '/' + closest_city['lat'] + closest_city['lng'] + '.pickle'
 
     session = boto3.Session(aws_access_key_id=amazon_access_key_id, aws_secret_access_key=amazon_secret_key)
     s3 = session.resource('s3')
