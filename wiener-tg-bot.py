@@ -144,7 +144,8 @@ class WienerTgBot:
         else:
             crossroads_pickle = obj.get()['Body'].read()
             crossroads = pickle.loads(crossroads_pickle)
-
+        update.message.reply_text('Trying to find a route near you in {}, '
+                                  'can take a minute, stay tuned!'.format(closest_city['name']))
         cl = wiener.FigureWayFinder(penis_dict, 2000, 0.5, 45, crossroads)
         cl.find_figure_way(user_location.latitude, user_location.longitude)
 
