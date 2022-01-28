@@ -215,7 +215,7 @@ class FigureWayFinder:
         edge = self.edge
         distance_allowance = self.distance_allowance
         edge_coefficients = [0.7, 0.8, 1.2, 1.4]
-        allowance_coefficients = [0.7, 0.8]
+        allowance_coefficients = [0.4, 0.6, 0.8]
         starting_nodes = self.get_start_nodes(lat, lon, 10)
         for start_node_ref in starting_nodes:
             start_nodes = self.find_start_ways(start_node_ref)
@@ -227,9 +227,10 @@ class FigureWayFinder:
             return
 
         for edge_coefficient in edge_coefficients:  # Make weaker coefficients if no ways found.
-            self.edge = self.edge * edge_coefficient
+
+            self.edge = edge * edge_coefficient
             for allowance_coefficient in allowance_coefficients:
-                self.distance_allowance = self.distance_allowance * allowance_coefficient
+                self.distance_allowance = distance_allowance * allowance_coefficient
                 for start_node_ref in starting_nodes:
                     start_nodes = self.find_start_ways(start_node_ref)
                     for node in start_nodes:
@@ -244,7 +245,15 @@ class FigureWayFinder:
     def try_continue_way(self, figure, visited_before):
         # figure is list of direction: int
         if not figure:
-            self.ways_found.append({'way': visited_before, 'ratio': self.length_ratio(visited_before)})
+            self.ways_found.append({'way': visited_before,
+                                    'ratio': self.length_ratio(visited_before),
+                                    'parameters':
+                                        {
+                                            'edge': self.edge,
+                                            'angle_allowance': self.angle_allowance,
+                                            'distance_allowance': self.distance_allowance
+                                        }
+                                    })
             return visited_before
 
         current_node = visited_before[-1]
@@ -280,6 +289,9 @@ class FigureWayFinder:
 
     def get_best_route(self):
         # Returns the route with biggest length ratio
+
+        if not self.ways_found:
+            return None
 
         ways_sorted = sorted(self.ways_found, key=lambda d: d['ratio'], reverse=True)
 
