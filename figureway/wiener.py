@@ -1,11 +1,7 @@
 import math
 import logging
 import staticmaps
-import configparser
-import os
-import staticmethods as static
-import pickle
-import boto3
+
 from distance import distance
 
 DIRECTION_RIGHT = 1
@@ -30,7 +26,6 @@ class PointShower:
         self.context.set_tile_provider(staticmaps.tile_provider_OSM)
 
     def show_point(self, lat, lon, color=staticmaps.RED):
-
         map_center = staticmaps.create_latlng(lat, lon)
         self.context.add_object(staticmaps.Marker(map_center, color=color, size=10))
 
@@ -103,6 +98,20 @@ class FigureWayFinder:
         self.ways_found = []
         logging.debug("FigureWayFinder initialized with figure {}, perimeter {}".format(figure, perimeter))
 
+    def length_ratio(self, nodes):
+        # The function to count ratio of length. Works only with penis_dict, not abstract.
+        left_egg_start_node = self.graph[nodes[1]]
+        left_egg_end_node = self.graph[nodes[2]]
+        penis_start_node = self.graph[nodes[3]]
+        penis_end_node = self.graph[nodes[4]]
+        left_egg_len = distance(left_egg_start_node['lat'], left_egg_start_node['lon'],
+                                left_egg_end_node['lat'], left_egg_end_node['lon'])
+
+        penis_len = distance(penis_start_node['lat'], penis_start_node['lon'],
+                             penis_end_node['lat'], penis_end_node['lon'])
+
+        return penis_len / left_egg_len
+
     def get_start_node(self, lat, lon):
         # Find the closest to (lat, lon) node in graph
         min_distance = 0
@@ -144,7 +153,7 @@ class FigureWayFinder:
                                                                  self.graph[neighbor_ref], 2)
             distance_to_current_node = distance(current_node["lat"], current_node["lon"],
                                                 self.graph[neighbor_ref]["lat"], self.graph[neighbor_ref]["lon"])
-            if is_on_the_same_direction:  # and distance_to_current_node > self.edge / 4:
+            if is_on_the_same_direction and distance_to_current_node: #> self.edge / 3:
                 node_in_same_direction[neighbor_ref] = self.graph[neighbor_ref]
 
         for node_ref in node_in_same_direction:
@@ -164,6 +173,7 @@ class FigureWayFinder:
         possible_ways = {}
 
         for neighbor_ref in current_node['neighbors']:
+
             is_on_the_same_direction = self.node_direction_check(current_node, self.graph[prev_node_ref],
                                                                  self.graph[neighbor_ref],
                                                                  figure_element["direction"])
@@ -177,9 +187,12 @@ class FigureWayFinder:
         possible_ways.update(node_in_same_direction)
 
         for node_ref in possible_ways:
+
             distance_to_current_node = distance(current_node["lat"], current_node["lon"],
                                                 self.graph[node_ref]["lat"], self.graph[node_ref]["lon"])
+
             is_in_distance = self.is_in_correct_distance(distance_to_current_node, figure_element["length"])
+
             if is_in_distance:
                 new_destinations[node_ref] = self.graph[node_ref]
 
@@ -201,8 +214,8 @@ class FigureWayFinder:
         # Building figure way from (lat, lon) point
         edge = self.edge
         distance_allowance = self.distance_allowance
-        edge_coeffs = [0.3, 0.4, 0.6, 0.5, 0.7, 0.8, 1.2, 1.4]
-        allowance_coeffs = [0.4, 0.6, 0.7, 0.8]
+        edge_coefficients = [0.7, 0.8, 1.2, 1.4]
+        allowance_coefficients = [0.7, 0.8]
         starting_nodes = self.get_start_nodes(lat, lon, 10)
         for start_node_ref in starting_nodes:
             start_nodes = self.find_start_ways(start_node_ref)
@@ -210,15 +223,20 @@ class FigureWayFinder:
                 print("***")
                 self.try_continue_way(self.figure[1:], [start_node_ref, node])
 
-        for edge_coeff in edge_coeffs:
-            self.edge = self.edge * edge_coeff
-            for allowance_coeff in allowance_coeffs:
-                self.distance_allowance = self.distance_allowance * allowance_coeff
+        if self.ways_found:
+            return
+
+        for edge_coefficient in edge_coefficients:  # Make weaker coefficients if no ways found.
+            self.edge = self.edge * edge_coefficient
+            for allowance_coefficient in allowance_coefficients:
+                self.distance_allowance = self.distance_allowance * allowance_coefficient
                 for start_node_ref in starting_nodes:
                     start_nodes = self.find_start_ways(start_node_ref)
                     for node in start_nodes:
                         print("***")
                         self.try_continue_way(self.figure[1:], [start_node_ref, node])
+            if self.ways_found:
+                return
 
         self.edge = edge  # Restored initial values
         self.distance_allowance = distance_allowance  # Restored initial values
@@ -226,7 +244,7 @@ class FigureWayFinder:
     def try_continue_way(self, figure, visited_before):
         # figure is list of direction: int
         if not figure:
-            self.ways_found.append(show_way_by_points(visited_before, self.graph))
+            self.ways_found.append({'way': visited_before, 'ratio': self.length_ratio(visited_before)})
             return visited_before
 
         current_node = visited_before[-1]
@@ -260,32 +278,18 @@ class FigureWayFinder:
 
         return new_destinations
 
+    def get_best_route(self):
+        # Returns the route with biggest length ratio
+
+        ways_sorted = sorted(self.ways_found, key=lambda d: d['ratio'], reverse=True)
+
+        #  best_way_string = show_way_by_points(ways_sorted[0]['way'], self.graph)
+
+        return ways_sorted[0]
+
 
 def main():
-
-    cfg = configparser.ConfigParser()
-    cfg.read(os.path.join(os.path.dirname(__file__), 'config.cfg'))
-    city_list_path = cfg.get('INPUT_PATH', 'city_list', fallback='Wrong Config file')
-
-    amazon_access_key_id = cfg.get('DEFAULT', 'aws_access_key_id')
-    amazon_secret_key = cfg.get('DEFAULT', 'aws_secret_access_key')
-    amazon_bucket_name = cfg.get('DEFAULT', 'aws_s3_bucket')
-    city_list = static.load_city_list(city_list_path)
-    closest_city = static.find_closest_city(57.12314815338618, 35.4577527073621, city_list)
-    print(closest_city)
-
-    city_filepath = '/Static/' + closest_city['country'] + '/' + closest_city['lat'] + closest_city['lng'] + '.pickle'
-
-    session = boto3.Session(aws_access_key_id=amazon_access_key_id, aws_secret_access_key=amazon_secret_key)
-    s3 = session.resource('s3')
-    obj = s3.Object(amazon_bucket_name, city_filepath)
-    obj.load()
-    crossroads_pickle = obj.get()['Body'].read()
-    crossroads = pickle.loads(crossroads_pickle)
-    cl = FigureWayFinder(penis_dict, 2000, 0.5, 45, crossroads)
-
-    cl.find_figure_way(57.12314815338618, 35.4577527073621)
-    print(cl.ways_found)
+    pass
 
 
 if __name__ == '__main__':

@@ -92,7 +92,6 @@ class WienerTgBot:
 
     def start(self, update: Update, context: CallbackContext) -> int:
         """Starts the conversation and asks the user about their gender."""
-        reply_keyboard = [['RU', 'EN', 'NL']]
 
         update.message.reply_text(
             'Hello, time to build some figure way! '
@@ -115,6 +114,9 @@ class WienerTgBot:
                                             you are not near one. Come back from the city!''')
             return ConversationHandler.END
 
+        update.message.reply_text('Trying to find a route near you in {}, '
+                                  'can take a minute, stay tuned!'.format(closest_city['name']))
+
         city_filepath = '/Static/' \
                         + closest_city['country'] \
                         + '/' \
@@ -122,7 +124,8 @@ class WienerTgBot:
                         + closest_city['lng'] \
                         + '.pickle'
 
-        session = boto3.Session(aws_access_key_id=self.amazon_access_key_id, aws_secret_access_key=self.amazon_secret_key)
+        session = boto3.Session(aws_access_key_id=self.amazon_access_key_id,
+                                aws_secret_access_key=self.amazon_secret_key)
         s3 = session.resource('s3')
 
         try:
@@ -144,12 +147,12 @@ class WienerTgBot:
         else:
             crossroads_pickle = obj.get()['Body'].read()
             crossroads = pickle.loads(crossroads_pickle)
-        update.message.reply_text('Trying to find a route near you in {}, '
-                                  'can take a minute, stay tuned!'.format(closest_city['name']))
+
         cl = wiener.FigureWayFinder(penis_dict, 2000, 0.5, 45, crossroads)
         cl.find_figure_way(user_location.latitude, user_location.longitude)
 
         if cl.ways_found:
+
             reply_keyboard = [['1', '2', '3', '4', '5']]
             update.message.reply_text(
                 'We found a wiener-route for you! Check it out and rate it, please!',
@@ -157,15 +160,18 @@ class WienerTgBot:
                                 reply_keyboard,
                                 one_time_keyboard=True,
                                 input_field_placeholder='Rate the route, please!'))
-            update.message.reply_text(cl.ways_found[0])
+            best_route = cl.get_best_route()
+            gmaps_link = wiener.show_way_by_points(best_route[0]['way'], cl.graph)
+            update.message.reply_text(gmaps_link)
             return RANK
+
         else:
             update.message.reply_text(
                 'Unfortunately, there are no such way around you, try to sin less, and god will love you more.'
             )
             return ConversationHandler.END
 
-    def rank(self, update:Update, context: CallbackContext):
+    def rank(self, update: Update, context: CallbackContext):
         rank = update.message.text
         update.message.reply_text(
             'Thanks a lot for the rank {} for the route! To get another route feel free to push /Start'.format(rank),
