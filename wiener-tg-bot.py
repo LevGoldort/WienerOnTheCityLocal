@@ -13,6 +13,7 @@ import configparser
 import boto3
 import botocore
 import pickle
+from datetime import datetime
 
 from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.ext import (
@@ -106,6 +107,7 @@ class WienerTgBot:
         user = update.message.from_user
         user_location = update.message.location
         print("Start Location for %s: %f / %f", user.first_name, user_location.latitude, user_location.longitude)
+        print('Started work for {} at {}'.format(user.first_name, datetime.now()))
 
         closest_city = static.find_closest_city(user_location.latitude, user_location.longitude, self.city_list)
 
@@ -161,8 +163,10 @@ class WienerTgBot:
                                 one_time_keyboard=True,
                                 input_field_placeholder='Rate the route, please!'))
             best_route = cl.get_best_route()
-            gmaps_link = wiener.show_way_by_points(best_route[0]['way'], cl.graph)
+            gmaps_link = wiener.show_way_by_points(best_route['way'], cl.graph)
             update.message.reply_text(gmaps_link)
+            print('Finished work for {} at {}'.format(user.first_name, datetime.now()))
+
             return RANK
 
         else:
