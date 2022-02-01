@@ -1,6 +1,7 @@
 import math
 import logging
-import staticmaps
+# import staticmaps
+import random
 
 from distance import distance
 
@@ -19,32 +20,32 @@ penis_dict = [{"direction": -1, "length": 1},
               ]
 
 
-class PointShower:
-
-    def __init__(self):
-        self.context = staticmaps.Context()
-        self.context.set_tile_provider(staticmaps.tile_provider_OSM)
-
-    def show_point(self, lat, lon, color=staticmaps.RED):
-        map_center = staticmaps.create_latlng(lat, lon)
-        self.context.add_object(staticmaps.Marker(map_center, color=color, size=10))
-
-    def show_points_on_map(self, graph, point, points_list, second_points_list=None):
-        context = staticmaps.Context()
-        context.set_tile_provider(staticmaps.tile_provider_OSM)
-
-        map_center = staticmaps.create_latlng(graph[point]['lat'], graph[point]['lon'])
-        context.add_object(staticmaps.Marker(map_center, color=staticmaps.RED, size=10))
-
-        for element in points_list:
-            element_center = staticmaps.create_latlng(graph[element]['lat'], graph[element]['lon'])
-            context.add_object(staticmaps.Marker(element_center, color=staticmaps.BLUE, size=10))
-
-        image = context.render_svg(1024, 800)
-
-    def drop_image(self):
-        image = self.context.render_svg(1024, 1024)
-        image.save()
+# class PointShower:
+#
+#     def __init__(self):
+#         self.context = staticmaps.Context()
+#         self.context.set_tile_provider(staticmaps.tile_provider_OSM)
+#
+#     def show_point(self, lat, lon, color=staticmaps.RED):
+#         map_center = staticmaps.create_latlng(lat, lon)
+#         self.context.add_object(staticmaps.Marker(map_center, color=color, size=10))
+#
+#     def show_points_on_map(self, graph, point, points_list, second_points_list=None):
+#         context = staticmaps.Context()
+#         context.set_tile_provider(staticmaps.tile_provider_OSM)
+#
+#         map_center = staticmaps.create_latlng(graph[point]['lat'], graph[point]['lon'])
+#         context.add_object(staticmaps.Marker(map_center, color=staticmaps.RED, size=10))
+#
+#         for element in points_list:
+#             element_center = staticmaps.create_latlng(graph[element]['lat'], graph[element]['lon'])
+#             context.add_object(staticmaps.Marker(element_center, color=staticmaps.BLUE, size=10))
+#
+#         image = context.render_svg(1024, 800)
+#
+#     def drop_image(self):
+#         image = self.context.render_svg(1024, 1024)
+#         image.save()
 
 
 def rotate(ox, oy, px, py, angle):
@@ -95,6 +96,7 @@ class FigureWayFinder:
         self.distance_allowance = distance_allowance
         self.angle_allowance = angle_allowance
         self.graph = graph
+        self.name = random.random()
         self.ways_found = []
         logging.debug("FigureWayFinder initialized with figure {}, perimeter {}".format(figure, perimeter))
 
@@ -151,9 +153,8 @@ class FigureWayFinder:
 
             is_on_the_same_direction = self.node_direction_check(current_node, prev_node,
                                                                  self.graph[neighbor_ref], 2)
-            distance_to_current_node = distance(current_node["lat"], current_node["lon"],
-                                                self.graph[neighbor_ref]["lat"], self.graph[neighbor_ref]["lon"])
-            if is_on_the_same_direction and distance_to_current_node: #> self.edge / 3:
+
+            if is_on_the_same_direction:
                 node_in_same_direction[neighbor_ref] = self.graph[neighbor_ref]
 
         for node_ref in node_in_same_direction:
@@ -220,7 +221,7 @@ class FigureWayFinder:
         for start_node_ref in starting_nodes:
             start_nodes = self.find_start_ways(start_node_ref)
             for node in start_nodes:
-                print("***")
+                print(self.name, "***")
                 self.try_continue_way(self.figure[1:], [start_node_ref, node])
 
         if self.ways_found:
@@ -234,7 +235,7 @@ class FigureWayFinder:
                 for start_node_ref in starting_nodes:
                     start_nodes = self.find_start_ways(start_node_ref)
                     for node in start_nodes:
-                        print("***")
+                        print(self.name, "***")
                         self.try_continue_way(self.figure[1:], [start_node_ref, node])
             if self.ways_found:
                 return
@@ -252,7 +253,8 @@ class FigureWayFinder:
                                             'edge': self.edge,
                                             'angle_allowance': self.angle_allowance,
                                             'distance_allowance': self.distance_allowance
-                                        }
+                                        },
+                                    'route': show_way_by_points(visited_before, self.graph)
                                     })
             return visited_before
 
